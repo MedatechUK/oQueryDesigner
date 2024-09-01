@@ -1,0 +1,914 @@
+import json , pickle
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTextEdit
+from PyQt6 import QtWidgets, QtCore
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint
+from PyQt6.QtWidgets import QTreeWidgetItem , QTableWidget
+from PyQt6.QtGui import QTextOption , QFocusEvent
+from PyQt6.QtWidgets import QDialog
+
+#region "CustomMainWindow"
+
+class CustomMainWindow(QtWidgets.QMainWindow):
+
+    Close = pyqtSignal(QtCore.QEvent)    
+    loginEvent = pyqtSignal(str,str,str,str)   
+
+    def __init__(self , parent=None) :
+        super().__init__()
+        
+    def closeEvent(self, event):          
+        super().closeEvent(event)        
+
+#endregion
+        
+#region "Tree Widgets"
+
+class CustomTreeWidget(QtWidgets.QTreeWidget):
+
+    # Define a custom role
+    ENAME = Qt.ItemDataRole.UserRole + 1
+    FCLMN = Qt.ItemDataRole.UserRole + 2
+
+    @property
+    def fc(self):
+        return self.currentItem().data(0, self.FCLMN).get("FCLMN")
+
+    @fc.setter
+    def fc(self, value):
+        self.currentItem().setData(0, self.FCLMN, {"FCLMN": value})
+
+    @property
+    def en(self):
+        return self.currentItem().data(0, self.ENAME).get("ENAME")
+
+    item_click = pyqtSignal(QTreeWidgetItem)
+    item_Expanded = pyqtSignal(QTreeWidgetItem)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.itemClicked.connect(self.on_item_clicked)
+        self.itemExpanded.connect(self.on_item_expanded)
+        self.itemChanged.connect(self.on_item_check_state_changed)
+
+    def on_load(self , data):
+        # Get the data from the API
+        for i in [i for i in data['value'] if i['ENAME'] != "EFORM"] :
+            
+            # Create a new item
+            item = CustomQTreeWidgetItem(name=i['ENAME'] , title=i['TITLE'])
+            item.FCLMN = i["FCLMN_SUBFORM"]                       
+                    
+            # Add the item to the tree widget
+            self.addTopLevelItem(item)
+
+            for c in i['FLINK_SUBFORM']:
+                child_item = CustomQTreeWidgetItem(name=c['FNAME'] , title=c['TITLE'])            
+                item.addChild(child_item)
+                
+    def __getstate__(self):
+        # Serialize the tree widget items
+        state = []
+        for i in range(self.topLevelItemCount()):
+            item = self.topLevelItem(i)
+            state.append(self._serialize_item(item))
+        return state
+
+    def __setstate__(self, state):
+        # Clear the current items
+        self.clear()
+        # Deserialize the state and add items back to the tree widget
+        for item_data in state:
+            item = self._deserialize_item(item_data)
+            self.addTopLevelItem(item)
+
+    def _serialize_item(self, item):
+        # Recursively serialize a QTreeWidgetItem
+        item_data = {
+            "text": item.text(0),
+            "data": item.data(0, self.FCLMN),
+            "children": [self._serialize_item(item.child(i)) for i in range(item.childCount())]
+        }
+        return item_data
+
+    def _deserialize_item(self, item_data):
+        # Recursively deserialize a QTreeWidgetItem
+        item = CustomQTreeWidgetItem([item_data["text"]])
+        item.setData(0, self.FCLMN, item_data["data"])
+        for child_data in item_data["children"]:
+            child_item = self._deserialize_item(child_data)
+            item.addChild(child_item)
+        return item
+    
+    def on_item_check_state_changed(self, item, column):
+        if column == 0:  # Assuming the checkbox is in the first column
+            match item.checkState(0):
+                case Qt.CheckState.Checked:
+                    item.Check = True
+                    self.check_all_parents(item)                    
+                case Qt.CheckState.Unchecked:
+                    item.Check = False
+                    self.uncheck_all_children(item)
+
+    def on_item_clicked(self, item, column):
+        self.item_click.emit(item)
+
+    def on_item_expanded(self, item):
+        self.item_Expanded.emit(item)
+
+    def check_all_parents(self, item):
+        parent = item.parent()
+        while parent:
+            parent.setCheckState(0, Qt.CheckState.Checked)
+            parent = parent.parent()
+
+    def uncheck_all_children(self, item):
+        def recursive_uncheck(item):
+            for i in range(item.childCount()):
+                child = item.child(i)
+                child.setCheckState(0, Qt.CheckState.Unchecked)
+                recursive_uncheck(child)
+        recursive_uncheck(item)
+
+    def save_treewidget_state(self , treewidget, filename):
+        with open(filename, 'wb') as file:
+            pickle.dump(treewidget, file)
+
+    def load_treewidget_state(self , filename):    
+        with open(filename, 'rb') as file:
+            return pickle.load(file)
+
+    def save_state(self):
+        self.save_treewidget_state(self, 'treewidget_state.pkl')
+
+    def load_state(self):
+        try:
+            loaded_treewidget = self.load_treewidget_state('treewidget_state.pkl')
+            self.clear()
+            self.addTopLevelItems(loaded_treewidget.takeTopLevelItems())
+
+        except (FileNotFoundError, pickle.UnpicklingError):
+            pass
+
+class CustomQTreeWidgetItem(QTreeWidgetItem):
+
+    def __init__(self, name=None, title=None, parent=None):
+        super().__init__(parent)
+        self.FCLMN = None
+        if name is not None:
+            self.Name = name
+        if title is not None:
+            self.Title = title
+
+        self.Name = name
+        self.setText(0, title)  # Set text for the first column        
+        self.setFlags(self.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+        self.setCheckState(0, Qt.CheckState.Unchecked)
+
+    # Returns the root item of the selected item
+    def Root(self) :
+        parent = self
+        while parent.parent():
+            parent = parent.parent()
+        return parent
+    
+    # RETURNS TRUE IF NO CHILDREN ARE SELECTED
+    def selectAll(self) -> bool:
+        for i in self.FCLMN:
+            if i["CHECKED"] == "Y":
+                return False
+                break
+        return True
+    
+#region "CustomQTreeWidgetItem Properties"
+
+    NAME_ROLE = Qt.ItemDataRole.UserRole + 1
+    TITLE_ROLE = Qt.ItemDataRole.UserRole + 2
+    FCLMN_ROLE = Qt.ItemDataRole.UserRole + 3
+    CHECK_ROLE = Qt.ItemDataRole.UserRole + 4
+
+    @property
+    def Name(self):
+        return self.data(0, self.NAME_ROLE)
+
+    @Name.setter
+    def Name(self, value):
+        self.setData(0, self.NAME_ROLE, value)
+
+    @property
+    def Title(self):
+        return self.data(0, self.TITLE_ROLE)
+
+    @Title.setter
+    def Title(self, value):
+        self.setData(0, self.TITLE_ROLE, value)
+
+    @property
+    def FCLMN(self):
+        return self.data(0, self.FCLMN_ROLE)
+
+    @FCLMN.setter
+    def FCLMN(self, value):        
+        if value!=None:
+            for c in value:
+                if "CHECKED" not in c:
+                    c["CHECKED"] = ""        
+                if "oSORT" not in c:
+                    c["oSORT"] = ""
+        self.setData(0, self.FCLMN_ROLE, value)
+
+    @property
+    def Check(self):
+        return self.data(0, self.CHECK_ROLE)
+
+    @Check.setter
+    def Check(self, value):
+        self.setData(0, self.CHECK_ROLE, value)
+        match value:
+            case True:
+                self.setCheckState(0, Qt.CheckState.Checked)
+            case False:
+                self.setCheckState(0, Qt.CheckState.Unchecked)
+
+    def expandItem(self, data):
+        self.FCLMN = data['value'][0]["FCLMN_SUBFORM"]            
+
+        for i in data['value']:
+            if 'FLINK_SUBFORM' in i:
+                for s in i['FLINK_SUBFORM']:
+                    child_item = CustomQTreeWidgetItem(name=s['FNAME'] , title=s['TITLE'])                                                
+                    self.addChild(child_item)        
+
+#endregion
+
+#region "oData URL Generation"
+
+    def select(self):
+        ret = []    
+        for i in self.FCLMN:
+            if i["CHECKED"] == "Y":                
+                ret.append( i["NAME"] )
+        
+        if len(ret) == 0:
+            return ""
+        else:            
+            return "$select=" + ",".join(ret)
+
+    def sort(self):
+        ret = []    
+        for i in [i for i in self.FCLMN if i["oSORT"] != ""] :
+            match i["oSORT"]:
+                case "ASC":
+                    ret.append(i["NAME"])
+                case "DESC":
+                    ret.append(i["NAME"] + " desc")                
+        
+        if len(ret) == 0:
+            return ""
+        else:            
+            return "$orderby=" + ",".join(ret)
+            
+    def filter(self):
+        ret2 = []
+        for i in self.FCLMN:
+            if "CONDITIONS" in i:                            
+                ret = []
+                count = 0
+                for c in i["CONDITIONS"]:
+                    if count > 0:
+                        ao = c["andor"] + " " + i["NAME"]
+                    else:
+                        ao = i["NAME"]
+                    
+                    colType = i["TYPE"]
+                    if colType == None:
+                        colType = i["FCLMNA_SUBFORM"]["TYPE"]
+
+                    match colType:
+                        case "INT" :
+                            val = str(c["value"])
+                        case "REAL":
+                            val = str(c["value"])
+                        case _:
+                            val = "'" + str(c["value"]) + "'"
+
+                    match c["compare"]:
+                        case "=":
+                            ret.append(ao + " eq " + val)
+                        case "<>":
+                            ret.append(ao + " ne " + val)
+                        case ">", ">=":
+                            ret.append(ao + " gt " + val if c["compare"] == ">" else ao + " ge " + val)
+                        case "<", "<=":
+                            ret.append(ao + " lt " + val if c["compare"] == "<" else ao + " le " + val)
+
+                    count += 1
+
+                if len(ret) > 0:
+                    ret2.append("(" + " ".join(ret) + ")")
+
+        if len(ret2) == 0:
+            return ""
+        else:
+            return "$filter=" + "".join(ret2)
+    
+    def expand(self):
+        ch = []
+        for i in [i for i in range(self.childCount()) if self.child(i).Check]:            
+            curl = self.child(i).URL()
+            if len(curl) > 0: curl = "(" + curl + ")"                                        
+            ch.append(self.child(i).Name + "_SUBFORM" + curl)
+        
+        if len(ch) > 0:            
+            return "$expand=" + ",".join(ch) 
+        else:
+            return ""
+
+    def URL(self):
+        ret= ""
+        if self.parent() == None:
+            ret = self.Name + "?\n"         
+            delim = "&"
+        else:            
+            delim = "; "
+
+        fpar = []
+        sel = self.select()
+        if len(sel) > 0 : fpar.append(sel)
+        filt = self.filter()
+        if len(filt) > 0 : fpar.append(filt)
+        ord = self.sort()
+        if len(ord) > 0 : fpar.append(ord)
+        exp = self.expand()
+        if len(exp) > 0 : fpar.append(exp)
+        
+        if len(fpar) > 0:
+            if self.parent() != None: ret += "\n"
+
+        return ret + delim.join(fpar)         
+
+    def safeURL(self):
+        return self.URL().replace(chr(10),"").replace(chr(13),"").replace(chr(8),"")
+    
+#endregion
+
+#region "Javascript Code Generation"
+
+    def tabstr(self,tabs):
+        return ' ' * 4 * tabs
+    
+    def js_code(self,tabs=0):
+        ret = ""
+        if self.parent() == None:
+            ret += "/* oData "+ self.Name +" Object. \n"
+            ret += "Save as ./public/javascripts/"+ self.Name +".js \n"            
+            ret += "Usage: \n"
+            ret += "    " + self.Name.lower() + " = new "+ self.Name +"();\n"    
+            ret += "    for (let i = 0; i < "+ self.Name.lower() +".data.length; i++) {\n"
+            ret += "        console.log("+ self.Name.lower() + ".data[i]);\n"
+            ret += "    }\n"
+            ret += "*/\n\n"            
+            ret += self.tabstr(tabs) + "class "+ self.Name +" {\n"
+            tabs +=1
+            ret += self.tabstr(tabs) + "constructor() {\n"
+            tabs +=1
+            ret += self.tabstr(tabs) + "console.log('Loading " + self.Name + "...');\n"
+            ret += self.tabstr(tabs) + "var xhttp = new XMLHttpRequest();\n"        
+            ret += self.tabstr(tabs) + "xhttp.open('GET', 'http://127.0.0.1:31333/" + self.Name + "', false);\n"
+            ret += self.tabstr(tabs) + "xhttp.send();\n"       
+            ret += self.tabstr(tabs) + "if (xhttp.status === 200) {\n"  
+            tabs += 1
+            ret += self.tabstr(tabs) + "var resp = JSON.parse(xhttp.responseText);\n"                    
+            ret += self.tabstr(tabs) + "this.data = resp['value'].map(function (i, index) {\n"
+
+        else:
+            ret += self.tabstr(tabs) + self.Name + "_SUBFORM : i." + self.Name + "_SUBFORM.map(function (i, index) {\n"
+        
+        tabs += 1
+        
+        ret += self.tabstr(tabs) + "let o" + self.Name + " = {\n"        
+        tabs += 1
+
+        ret += self.tabstr(tabs) + "ID: index,\n"
+        
+        if self.selectAll():
+            for i in self.FCLMN:
+                ret += self.tabstr(tabs) + i["NAME"] + ": i." + i["NAME"] + ",\n"
+        else:
+            for i in [i for i in self.FCLMN if i["CHECKED"] == "Y"]:
+                ret += self.tabstr(tabs) + i["NAME"] + ": i['" + i["NAME"] + "'],\n"
+
+        for i in [i for i in range(self.childCount()) if self.child(i).Check]:            
+            ret += self.child(i).js_code(tabs)  
+             
+        tabs -= 1
+
+        ret += self.tabstr(tabs) + "}\n" 
+        ret += self.tabstr(tabs) + "return o" + self.Name + ";\n"
+        tabs -= 1
+
+        ret += self.tabstr(tabs) + "}),"        
+
+        if self.parent() == None:
+            ret += ";\n"                                       
+            tabs -= 1
+            ret += self.tabstr(tabs) + "}\n"
+            tabs -= 1
+            ret += self.tabstr(tabs) + "}\n"                        
+            tabs -= 1
+            ret += self.tabstr(tabs) + "}\n" 
+
+        else:
+            ret += "\n"
+
+        return ret
+    
+#endregion
+
+#endregion
+
+#region "Table Widgets"
+
+class ColumnWidget(QTableWidget):
+    
+    Select = pyqtSignal(int)    
+
+    def __init__(self, name=None, title=None, parent=None):
+        super().__init__(parent)
+        
+        self.Item = None
+        self.setColumnCount(5)
+        self.setHorizontalHeaderLabels(["Select", "Name", "Title", "Type" , "Sort"])        
+        self.setColumnWidth(0, 25)
+        self.setColumnWidth(1, 150)
+        self.setColumnWidth(2, 150)
+        self.setColumnWidth(3, 60)
+        self.setColumnWidth(4, 100)
+
+        self.itemSelectionChanged.connect(self.on_item_selection_changed)
+
+    def on_item_selection_changed(self ):
+        self.Select.emit(self.currentRow()-1)
+
+    def sel(self):
+        if self.Item.checkState(0) != Qt.CheckState.Checked:
+            tmp = self.Item.FCLMN
+            for i in tmp:
+                i["CHECKED"] = "N"
+            self.Item.FCLMN = tmp
+            return False
+        else:
+            for i in self.Item.FCLMN:       
+                if i["CHECKED"] == "Y":
+                    return False
+        return True
+
+    def on_form_click(self , item):
+
+        self.Item = item
+        self.setRowCount(0)
+
+        row_position = self.rowCount()
+        self.insertRow(row_position)
+        
+        self.selectAll = tbl_checkBox(row_position=row_position, Name="Select" , SelValue=self.sel())
+        self.selectAll.changed.connect(self.on_select_all)
+
+        self.setCellWidget(row_position, 0, self.selectAll)        
+        self.setCellWidget(row_position, 1 , tbl_label(row_position=row_position, Name="Name" , SelValue="Select All"))
+        self.setCellWidget(row_position, 2 , tbl_label(row_position=row_position, Name="Title" , SelValue="Select All"))
+        self.setCellWidget(row_position, 3 , tbl_label(row_position=row_position, Name="Type" , SelValue="-"))
+        self.setCellWidget(row_position, 3 , tbl_label(row_position=row_position, Name="Sort" , SelValue="-"))
+    
+        for i in item.FCLMN:        
+
+            # Add a new row to the ConditionWidget
+            row_position = self.rowCount()
+            self.insertRow(row_position)
+            
+            W0 = tbl_checkBox(row_position=row_position-1, Name="Select" , SelValue=i["CHECKED"]=="Y")
+            W0.changed.connect(self.on_change)
+            self.setCellWidget(row_position, 0, W0)
+            
+            W1 = tbl_label(row_position=row_position-1, Name="Name" , SelValue=i["NAME"])            
+            self.setCellWidget(row_position, 1, W1)
+            
+            if i["TITLE"] != None:
+                TITLE = i["TITLE"]
+            else:
+                if i["COLTITLE"] != None:
+                    TITLE = i["COLTITLE"]
+                else:
+                    TITLE = i["NAME"]
+            
+            W2 = tbl_label(row_position=row_position-1, Name="Title" , SelValue=TITLE)            
+            self.setCellWidget(row_position, 2, W2)
+            
+            match i["TYPE"]:
+                case None:
+                    W3 = tbl_label(row_position=row_position-1, Name="Type" , SelValue=i["FCLMNA_SUBFORM"]["TYPE"])            
+                case _:
+                    W3 = tbl_label(row_position=row_position-1, Name="Type" , SelValue=i["TYPE"])                        
+            self.setCellWidget(row_position, 3, W3)
+
+            W5 = tbl_comboBox(row_position=row_position-1, Name="Sort" , SelValue=i["oSORT"] , Items=["","ASC", "DESC"])
+            W5.changed.connect(self.on_change)
+            self.setCellWidget(row_position, 4, W5)       
+
+    def on_change(self , Name, Row , Widget):
+        tmp = self.Item.FCLMN
+        match Name:
+            case "Select":                                                
+                tmp[Row]["CHECKED"] = "Y" if Widget.isChecked() else "N"                                    
+                if tmp[Row]["CHECKED"] == "Y" :
+                    self.selectAll.setChecked(False)
+                    self.Item.Check = True
+
+            case "Sort":    
+                tmp[Row]["oSORT"] = Widget.currentText()
+            
+            case _: 
+                pass
+        
+        self.Item.FCLMN = tmp
+
+    def on_select_all(self):
+        if self.selectAll.isChecked():
+            self.Item.Check = True
+            tmp = self.Item.FCLMN
+            for i in tmp:
+                i["CHECKED"] = "N"
+            self.Item.FCLMN = tmp
+            self.on_form_click(self.Item)
+
+class ConditionWidget(QTableWidget):
+    
+    def __init__(self, name=None, title=None, parent=None):
+        super().__init__(parent)
+        
+        self.setColumnCount(4)
+        self.setHorizontalHeaderLabels(["And/Or", "Compare", "Value","Delete"])        
+
+    def on_form_click(self , item , Row ):
+
+        self.Item = item
+        self.Row = Row        
+
+        self.setRowCount(0)
+        if self.Row >= 0:
+            i = item.FCLMN[Row]
+            if "CONDITIONS" in i:
+                for c in i["CONDITIONS"]:
+                    # Add a new row to the ConditionWidget
+                    row_position = self.rowCount()
+                    self.insertRow(row_position)
+
+                    if row_position == 0 :
+                        W0 = tbl_label(row_position=row_position, Name="AndOr" , SelValue="")
+                    else:
+                        W0 = tbl_comboBox(row_position=row_position, Name="AndOr" , SelValue=c["andor"], Items=["","AND", "OR"])       
+                        W0.changed.connect(self.on_change)                                 
+                    self.setCellWidget(row_position, 0, W0)
+
+                    W1 = tbl_comboBox(row_position=row_position, Name="Compare", SelValue=c["compare"],Items=["","=", "<>", ">", "<", ">=", "<="])
+                    W1.changed.connect(self.on_change)                                 
+                    self.setCellWidget(row_position, 1, W1) 
+                    
+                    W2 = tbl_textbox(row_position=row_position, Name="Value" , SelValue=c["value"])
+                    W2.changed.connect(self.on_change)                                 
+                    self.setCellWidget(row_position, 2, W2)
+
+                    W3 = tbl_pushButton(row_position=row_position, Name="Delete" , SelValue="Delete")
+                    W3.changed.connect(self.on_change)                                 
+                    self.setCellWidget(row_position, 3, W3)
+
+    def on_change(self , Name, Row , Widget):
+        tmp = self.Item.FCLMN
+        match Name:
+            case "AndOr":                                                                
+                tmp[self.Row]["CONDITIONS"][Row]["andor"] = Widget.currentText()
+
+            case "Compare":    
+                tmp[self.Row]["CONDITIONS"][Row]["compare"] = Widget.currentText()
+            
+            case "Value":
+                tmp[self.Row]["CONDITIONS"][Row]["value"] = Widget.text()
+
+            case "Delete":
+                tmp[self.Row]["CONDITIONS"].pop(Row)                
+
+            case _: 
+                pass
+        
+        self.Item.FCLMN = tmp
+        match Name:
+            case "Delete":
+                self.on_form_click(self.Item , self.Row)
+        
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)            
+        if event.button() == Qt.MouseButton.RightButton:                
+            self.show_context_menu(event.pos())
+            
+    def show_context_menu(self , position):
+        menu = QtWidgets.QMenu()
+
+        action1 = menu.addAction("Add Condition")        
+        action1.triggered.connect(lambda: self.handle_context_menu("Add Condition"))
+        
+        menu.exec(self.mapToGlobal(position))
+
+    def handle_context_menu(self , action_name):
+        match action_name:
+            case "Add Condition":
+                self.Item.Check = True
+
+                # Implement the logic for adding a condition to the item
+                tmp = self.Item.FCLMN            
+                if not "CONDITIONS" in tmp[self.Row]:  
+                    tmp[self.Row]["CONDITIONS"] = []        
+                if len(tmp[self.Row]["CONDITIONS"]) > 0:
+                    tmp[self.Row]["CONDITIONS"].append({"andor": "AND", "compare": "=", "value": ""})
+                else:
+                    tmp[self.Row]["CONDITIONS"].append({"andor": "", "compare": "=", "value": ""})
+
+                self.Item.FCLMN = tmp      
+                self.on_form_click(self.Item , self.Row)
+        
+            case "Remove Condition":
+                pass
+        
+#endregion
+
+#region "Table Widgets Controls"
+
+class tbl_textbox(QtWidgets.QLineEdit):
+    changed = pyqtSignal(str, int , QtWidgets.QLineEdit)
+
+    def __init__(self, Name=None, parent=None, row_position=0, SelValue=""):
+        super().__init__(parent)
+        self.Name = Name
+        self.setText(SelValue)
+        self.editingFinished.connect(lambda: self.on_editing_finished(row_position))
+
+    def on_editing_finished(self, row_position):
+        self.changed.emit(self.Name, row_position, self)
+    
+class tbl_label(QtWidgets.QLabel):
+    changed = pyqtSignal(str, int , QtWidgets.QLabel)
+
+    def __init__(self, Name=None, parent=None, row_position=0, SelValue=""):
+        super().__init__(parent)
+        self.Name = Name
+        self.setText(SelValue)
+            
+class tbl_comboBox(QtWidgets.QComboBox):
+    changed = pyqtSignal(str , int , QtWidgets.QLineEdit)
+    def __init__(self, Name=None, parent=None, row_position=0, SelValue="", Items=[]):
+        super().__init__(parent)
+        self.Name = Name        
+        self.addItems(Items)
+        self.setCurrentText(SelValue)    
+        self.currentIndexChanged.connect(lambda: self.on_currentIndexChanged(row_position))
+
+    def on_currentIndexChanged(self, row_position):
+        self.changed.emit(self.Name, row_position, self)    
+
+class tbl_checkBox(QtWidgets.QCheckBox):
+    changed = pyqtSignal(str, int , QtWidgets.QCheckBox)
+    def __init__(self, Name=None, parent=None, row_position=0, SelValue=False):
+        super().__init__(parent)
+        self.Name = Name        
+        self.setChecked(SelValue)
+        self.stateChanged.connect(lambda: self.on_stateChanged(row_position))
+
+    def on_stateChanged(self, row_position):
+        self.changed.emit(self.Name, row_position, self)
+
+class tbl_pushButton(QtWidgets.QPushButton):
+    changed = pyqtSignal(str, int , QtWidgets.QPushButton)
+    def __init__(self, Name=None, parent=None, row_position=0, SelValue=""):
+        super().__init__(parent)
+        self.Name = Name        
+        self.setText(SelValue)
+        self.clicked.connect(lambda: self.on_clicked(row_position))
+
+    def on_clicked(self, row_position):
+        self.changed.emit(self.Name, row_position, self)
+        
+#endregion        
+
+#region "Text Widgets"
+
+class CustomTextedit(QtWidgets.QTextEdit):
+
+    refresh = pyqtSignal(str)   
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptRichText(False)
+        self.setTabChangesFocus(True)
+        self.setLineWrapMode(QtWidgets.QTextEdit.LineWrapMode.NoWrap)
+        self.setPlaceholderText("Enter the URL here")
+
+        # Disable horizontal scrolling
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setWordWrapMode(QTextOption.WrapMode.WordWrap)
+
+    def keyPressEvent(self, event):
+        super().keyPressEvent(event)
+        if event.key() == Qt.Key.Key_F5:            
+            self.refresh.emit(self.URL())        
+
+    def URL(self):
+        return self.toPlainText().replace(chr(10),"").replace(chr(13),"").replace(chr(8),"")
+        
+class JsonViewer(QWidget):
+
+    def __init__(self, parent=None):
+        super().__init__()        
+        layout = QVBoxLayout()
+        self.textEdit = QTextEdit(self)
+        self.textEdit.setReadOnly(True)
+        layout.addWidget(self.textEdit)
+
+        self.setLayout(layout)    
+
+    def load_json(self, json_data):
+        formatted_json = json.dumps(json_data, indent=4)
+        self.textEdit.setPlainText(formatted_json)
+
+    def clear(self):
+        self.textEdit.clear()   
+
+#endregion
+
+#region "asynchronous URL request"
+
+import aiohttp
+import asyncio
+import base64
+
+class AsyncoDataRequest(QWidget):
+
+    def __init__(self, baseurl=None, env=None, user=None, password=None):
+        super().__init__()      
+               
+        self.baseurl = baseurl.rstrip('/')
+        if "://" not in self.baseurl:
+            self.baseurl = "https://" + self.baseurl
+        self.env = env
+        self.user = user
+        self.password = password
+        self.tabulaini = "tabula.ini"
+
+        self.Cancel = False
+        self.LoginOK = False
+        self.LoginFail = False
+
+    def MissingParams(self)->bool:
+        return self.baseurl == None or self.env == None or self.user == None or self.password == None
+         
+    def URL(self):
+        return self.baseurl + "/odata/priority/"+ self.tabulaini +"/" + self.env + "/"
+
+    def generate_basic_auth(self):
+        credentials = f"{self.user}:{self.password}"
+        return f"Basic {base64.b64encode(credentials.encode('utf-8')).decode('utf-8')}"
+                                               
+    def getURL(self, url, callback):        
+        
+        if self.MissingParams():
+            self.LoginFail = True
+
+        if self.LoginFail:
+            self.show_login_dialog()
+
+        if not self.Cancel:
+            # Run the asynchronous function in the event loop
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If the event loop is already running, create a new one
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                new_loop.run_until_complete(self.asyncget(url, callback))
+                asyncio.set_event_loop(loop)
+            else:
+                loop.run_until_complete(self.asyncget(url, callback ))           
+        
+    async def asyncget(self , url , callback):        
+        async with aiohttp.ClientSession(auth=aiohttp.BasicAuth(self.user, self.password)) as session:
+            async with session.get(self.URL() + url) as response:
+                match response.status:
+                    case 200:           
+                        self.LoginOK = True
+                        self.LoginFail = False
+                        try:
+                            callback(await response.json())
+
+                        except Exception as e:
+                            callback({"error": str(e)}) 
+
+                    case _:                        
+                        if not self.LoginOK: 
+                            self.LoginFail = True
+                        
+                        else:
+                            try:
+                                callback(await response.json())
+
+                            except Exception as e:                            
+                                callback({"error": response.status , "message": response.reason})
+
+#region "Show login dialog"
+        
+    def show_login_dialog(self):
+        
+            Dialog = QtWidgets.QDialog()
+            dialogui = Ui_Dialog()
+            dialogui.setupUi(Dialog)
+
+            dialogui.url.setText(self.baseurl.split("://")[1])
+            dialogui.env.setText(self.env)
+            dialogui.username.setText(self.user)
+            dialogui.password.setText(self.password)
+
+            if Dialog.exec() == QDialog.DialogCode.Accepted:
+                self.baseurl = dialogui.url.text().rstrip('/')
+                if "://" not in self.baseurl:
+                    self.baseurl = "https://" + self.baseurl
+                self.env = dialogui.env.text()
+                self.user = dialogui.username.text()
+                self.password = dialogui.password.text()
+            else:
+                self.Cancel = True
+
+#endregion                
+
+class Ui_Dialog(object):
+    def setupUi(self, Dialog):
+        Dialog.setObjectName("Dialog")
+        Dialog.resize(390, 148)
+        self.gridLayoutWidget = QtWidgets.QWidget(parent=Dialog)
+        self.gridLayoutWidget.setGeometry(QtCore.QRect(10, 10, 371, 141))
+        self.gridLayoutWidget.setObjectName("gridLayoutWidget")
+        self.gridLayout = QtWidgets.QGridLayout(self.gridLayoutWidget)
+        self.gridLayout.setContentsMargins(0, 0, 0, 0)
+        self.gridLayout.setObjectName("gridLayout")
+        spacerItem = QtWidgets.QSpacerItem(20, 40, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Expanding)
+        self.gridLayout.addItem(spacerItem, 5, 1, 1, 1)
+        self.label_2 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_2.setMinimumSize(QtCore.QSize(100, 0))
+        self.label_2.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.label_2.setObjectName("label_2")
+        self.gridLayout.addWidget(self.label_2, 1, 0, 1, 1)
+        self.label = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label.setMinimumSize(QtCore.QSize(100, 0))
+        self.label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.label.setObjectName("label")
+        self.gridLayout.addWidget(self.label, 0, 0, 1, 1)
+        self.label_3 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_3.setMinimumSize(QtCore.QSize(100, 0))
+        self.label_3.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.label_3.setObjectName("label_3")
+        self.gridLayout.addWidget(self.label_3, 2, 0, 1, 1)
+        self.label_4 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_4.setMinimumSize(QtCore.QSize(100, 0))
+        self.label_4.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.label_4.setObjectName("label_4")
+        self.gridLayout.addWidget(self.label_4, 3, 0, 1, 1)
+        self.buttonBox = QtWidgets.QDialogButtonBox(parent=self.gridLayoutWidget)
+        self.buttonBox.setOrientation(QtCore.Qt.Orientation.Horizontal)
+        self.buttonBox.setStandardButtons(QtWidgets.QDialogButtonBox.StandardButton.Cancel|QtWidgets.QDialogButtonBox.StandardButton.Ok)
+        self.buttonBox.setObjectName("buttonBox")
+        self.gridLayout.addWidget(self.buttonBox, 4, 1, 1, 1)
+        self.url = QtWidgets.QLineEdit(parent=self.gridLayoutWidget)
+        self.url.setObjectName("url")
+        self.gridLayout.addWidget(self.url, 0, 1, 1, 1)
+        self.env = QtWidgets.QLineEdit(parent=self.gridLayoutWidget)
+        self.env.setObjectName("env")
+        self.gridLayout.addWidget(self.env, 1, 1, 1, 1)
+        self.username = QtWidgets.QLineEdit(parent=self.gridLayoutWidget)
+        self.username.setObjectName("username")
+        self.gridLayout.addWidget(self.username, 2, 1, 1, 1)
+        self.password = QtWidgets.QLineEdit(parent=self.gridLayoutWidget)
+        self.password.setInputMask("")
+        self.password.setMaxLength(32767)
+        self.password.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+        self.password.setObjectName("password")
+        self.gridLayout.addWidget(self.password, 3, 1, 1, 1)
+
+        self.retranslateUi(Dialog)
+        self.buttonBox.accepted.connect(Dialog.accept) # type: ignore
+        self.buttonBox.rejected.connect(Dialog.reject) # type: ignore
+        QtCore.QMetaObject.connectSlotsByName(Dialog)
+
+    def retranslateUi(self, Dialog):
+        _translate = QtCore.QCoreApplication.translate
+        Dialog.setWindowTitle(_translate("Dialog", "Log in"))
+        self.label_2.setText(_translate("Dialog", "Priority Company:"))
+        self.label.setText(_translate("Dialog", "oData Server:"))
+        self.label_3.setText(_translate("Dialog", "Username:"))
+        self.label_4.setText(_translate("Dialog", "Password"))
+   
+#endregion
