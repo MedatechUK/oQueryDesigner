@@ -176,9 +176,9 @@ if __name__ == "__main__":
 
     a = widgets.AsyncoDataRequest(
         baseurl    = "prioritydev.clarksonevans.co.uk"
-        , env      = None
-        , user     = None
-        , password = None
+        , env      = "fuld1"
+        , user     = "Si"
+        , password = "=Sund1al!"  
     )    
     
     while not ( a.Cancel | a.LoginOK ) :

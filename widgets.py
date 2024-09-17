@@ -310,7 +310,7 @@ class CustomQTreeWidgetItem(QTreeWidgetItem):
         if len(ret2) == 0:
             return ""
         else:
-            return "$filter=" + "".join(ret2)
+            return "$filter=" + " and ".join(ret2)
     
     def expand(self):
         ch = []
@@ -437,14 +437,14 @@ class ColumnWidget(QTableWidget):
         super().__init__(parent)
         
         self.Item = None
-        self.setColumnCount(5)
-        self.setHorizontalHeaderLabels(["Select", "Name", "Title", "Type" , "Sort"])        
+        self.setColumnCount(6)
+        self.setHorizontalHeaderLabels(["Select", "Name", "Title", "Type" , "Sort","!="])        
         self.setColumnWidth(0, 25)
         self.setColumnWidth(1, 150)
         self.setColumnWidth(2, 150)
         self.setColumnWidth(3, 60)
         self.setColumnWidth(4, 100)
-
+        self.setColumnWidth(5, 25)
         self.itemSelectionChanged.connect(self.on_item_selection_changed)
 
     def on_item_selection_changed(self ):
@@ -478,7 +478,9 @@ class ColumnWidget(QTableWidget):
         self.setCellWidget(row_position, 1 , tbl_label(row_position=row_position, Name="Name" , SelValue="Select All"))
         self.setCellWidget(row_position, 2 , tbl_label(row_position=row_position, Name="Title" , SelValue="Select All"))
         self.setCellWidget(row_position, 3 , tbl_label(row_position=row_position, Name="Type" , SelValue="-"))
-        self.setCellWidget(row_position, 3 , tbl_label(row_position=row_position, Name="Sort" , SelValue="-"))
+        self.setCellWidget(row_position, 4 , tbl_label(row_position=row_position, Name="Sort" , SelValue="-"))
+        self.setCellWidget(row_position, 5 , tbl_label(row_position=row_position, Name="Sort" , SelValue="-"))
+
     
         for i in item.FCLMN:        
 
@@ -513,11 +515,28 @@ class ColumnWidget(QTableWidget):
 
             W5 = tbl_comboBox(row_position=row_position-1, Name="Sort" , SelValue=i["oSORT"] , Items=["","ASC", "DESC"])
             W5.changed.connect(self.on_change)
-            self.setCellWidget(row_position, 4, W5)       
+            self.setCellWidget(row_position, 4, W5)   
+
+            W6 = tbl_pushButton(row_position=row_position, Name="AddCondition" , SelValue="!=")
+            W6.changed.connect(self.on_change)                                 
+            self.setCellWidget(row_position, 5, W6)                
 
     def on_change(self , Name, Row , Widget):
         tmp = self.Item.FCLMN
         match Name:
+            case "AddCondition":
+                # Implement the logic for adding a condition to the item
+                tmp = self.Item.FCLMN            
+                if not "CONDITIONS" in tmp[Row-1]:  
+                    tmp[Row-1]["CONDITIONS"] = []        
+                if len(tmp[Row-1]["CONDITIONS"]) > 0:
+                    tmp[Row-1]["CONDITIONS"].append({"andor": "AND", "compare": "=", "value": ""})
+                else:
+                    tmp[Row-1]["CONDITIONS"].append({"andor": "", "compare": "=", "value": ""})
+
+                self.Item.FCLMN = tmp      
+                self.Select.emit(Row-1)
+
             case "Select":                                                
                 tmp[Row]["CHECKED"] = "Y" if Widget.isChecked() else "N"                                    
                 if tmp[Row]["CHECKED"] == "Y" :
@@ -603,40 +622,7 @@ class ConditionWidget(QTableWidget):
         self.Item.FCLMN = tmp
         match Name:
             case "Delete":
-                self.on_form_click(self.Item , self.Row)
-        
-    def mousePressEvent(self, event):
-        super().mousePressEvent(event)            
-        if event.button() == Qt.MouseButton.RightButton:                
-            self.show_context_menu(event.pos())
-            
-    def show_context_menu(self , position):
-        menu = QtWidgets.QMenu()
-
-        action1 = menu.addAction("Add Condition")        
-        action1.triggered.connect(lambda: self.handle_context_menu("Add Condition"))
-        
-        menu.exec(self.mapToGlobal(position))
-
-    def handle_context_menu(self , action_name):
-        match action_name:
-            case "Add Condition":
-                self.Item.Check = True
-
-                # Implement the logic for adding a condition to the item
-                tmp = self.Item.FCLMN            
-                if not "CONDITIONS" in tmp[self.Row]:  
-                    tmp[self.Row]["CONDITIONS"] = []        
-                if len(tmp[self.Row]["CONDITIONS"]) > 0:
-                    tmp[self.Row]["CONDITIONS"].append({"andor": "AND", "compare": "=", "value": ""})
-                else:
-                    tmp[self.Row]["CONDITIONS"].append({"andor": "", "compare": "=", "value": ""})
-
-                self.Item.FCLMN = tmp      
-                self.on_form_click(self.Item , self.Row)
-        
-            case "Remove Condition":
-                pass
+                self.on_form_click(self.Item , self.Row)         
         
 #endregion
 
