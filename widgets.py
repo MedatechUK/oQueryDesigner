@@ -489,7 +489,7 @@ class ColumnWidget(QTableWidget):
         self.itemSelectionChanged.connect(self.on_item_selection_changed)
 
     def on_item_selection_changed(self ):
-        self.Select.emit(self.currentRow()-1)
+         self.Select.emit(self.currentRow()-1)
 
     def sel(self):
         if self.Item.checkState(0) != Qt.CheckState.Checked:
