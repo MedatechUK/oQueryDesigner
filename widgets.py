@@ -360,31 +360,76 @@ class CustomQTreeWidgetItem(QTreeWidgetItem):
     def js_code(self,tabs=0):
         ret = ""
         if self.parent() == None:
-            ret += "/* oData "+ self.Name +" Object. \n"
-            ret += "Save as ./public/javascripts/"+ self.Name +".js \n"            
-            ret += "Usage: \n"
-            ret += "    " + self.Name.lower() + " = new "+ self.Name +"();\n"    
-            ret += "    for (let i = 0; i < "+ self.Name.lower() +".data.length; i++) {\n"
-            ret += "        console.log("+ self.Name.lower() + ".data[i]);\n"
-            ret += "    }\n"
-            ret += "*/\n\n"            
-            ret += self.tabstr(tabs) + "class "+ self.Name +" {\n"
-            tabs +=1
-            ret += self.tabstr(tabs) + "constructor() {\n"
-            tabs +=1
-            ret += self.tabstr(tabs) + "console.log('Loading " + self.Name + "...');\n"
-            ret += self.tabstr(tabs) + "var xhttp = new XMLHttpRequest();\n"        
-            ret += self.tabstr(tabs) + "xhttp.open('GET', 'http://127.0.0.1:31333/" + self.Name + "', false);\n"
-            ret += self.tabstr(tabs) + "xhttp.send();\n"       
-            ret += self.tabstr(tabs) + "if (xhttp.status === 200) {\n"  
-            tabs += 1
-            ret += self.tabstr(tabs) + "var resp = JSON.parse(xhttp.responseText);\n"                    
-            ret += self.tabstr(tabs) + "this.data = resp['value'].map(function (i, index) {\n"
+            ret += "// oData "+ self.Name +" Marker Object. \n\n"
 
+            ret +="// The "+ self.Name +" info window class, which extends the infoWindow class.\n"
+            ret +="class nfo"+ self.Name +" extends infoWindow {\n"
+            ret +="    constructor() {\n"
+            ret +="        super();\n"
+            ret +="    }\n"
+            ret +="    refresh(data){\n"
+            ret +="        // Refresh the contents of the window with (data)\n"
+            ret +="        x = '<h1>Placeholder</h1>'\n"
+            ret +="        infowindowContent.innerHTML = x;\n"
+            ret +="        return infowindowContent;\n"
+            ret +="    }\n"
+            ret +="}\n\n"
+
+            ret += "// The "+ self.Name +" marker class, which extends the markerClass.\n"
+            ret += "class "+ self.Name +"Marker extends markerClass {\n"
+            ret += "    constructor(parent, lat, long , nfo) {\n"
+            ret += "        super(parent , lat, long, nfo);\n"
+            ret += '        this.label = "Some Label"\n'
+            ret += "        this.color = '#c0c0c0'\n"
+            ret += "    }\n"
+            ret += "    getIcon(){\n"
+            ret += "        return {\n"
+            ret += "            path: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',\n"
+            ret += "            fillColor: this.color,\n"
+            ret += "            fillOpacity: 0.6,\n"
+            ret += "            scale: 1,\n"
+            ret += "            strokeColor: '#000000',\n"
+            ret += "            strokeWeight: 2\n"
+            ret += "        };\n"
+            ret += "    }\n"
+            ret += "}\n\n"    
+
+            ret += "// The "+ self.Name +" class, which extends the oDataClass class.\n"     
+            ret += self.tabstr(tabs) + "class "+ self.Name +" extends oDataClass {\n"
+            tabs +=1
+            ret += self.tabstr(tabs) + "// The constructor\n"
+            ret += self.tabstr(tabs) + "constructor() {\n"
+            ret += self.tabstr(tabs) + "    // Call the parent constructor\n"
+            ret += self.tabstr(tabs) + '    super("' + self.Name + '");\n'            
+            ret += self.tabstr(tabs) + "}\n"
+     
+            ret += self.tabstr(tabs) + "// #region Methods to be implemented by derived class\n"
+            ret += self.tabstr(tabs) + "URL(){\n"
+            ret += self.tabstr(tabs) + "    // Get the URL for the oData service\n"
+            ret += self.tabstr(tabs) + '    return "' + self.safeURL() + '";\n'
+            ret += self.tabstr(tabs) + "}\n"            
+            ret += self.tabstr(tabs) + "// Set the markers in item\n"    
+            ret += self.tabstr(tabs) + "setMarkers(item){\n"
+            ret += self.tabstr(tabs) + '    // Create marker named "DEFAULT"\n'
+            ret += self.tabstr(tabs) + '    item.markers.push["DEFAULT"];\n'
+            ret += self.tabstr(tabs) + '    // Create the nfo' + self.Name +'" info window\n'
+            ret += self.tabstr(tabs) + '    var info = new nfo' + self.Name +'();\n'
+            ret += self.tabstr(tabs) + '    // Set the "DEFAULT" markers data, location and window\n'
+            ret += self.tabstr(tabs) + '    item.markers["DEFAULT"] =\n'
+            ret += self.tabstr(tabs) + '        new ' + self.Name +'Marker(item, item.LAT, item.LONG , info);\n'
+            ret += self.tabstr(tabs) + "}\n"
+            
+            ret += self.tabstr(tabs) + "Visible(item , marker){\n"
+            ret += self.tabstr(tabs) + "    // Set the marker visibility (and other properties) \n"
+            ret += self.tabstr(tabs) + "    return false;\n"
+            ret += self.tabstr(tabs) + "}\n"            
+            ret += self.tabstr(tabs) + "onLoad(response){\n"
+            tabs +=1
+            ret += self.tabstr(tabs) + "// Handle the response from the oData service\n"
+            
         else:
             ret += self.tabstr(tabs) + self.Name + "_SUBFORM : i." + self.Name + "_SUBFORM.map(function (i, index) {\n"
         
-        tabs += 1
         
         ret += self.tabstr(tabs) + "let o" + self.Name + " = {\n"        
         tabs += 1
@@ -404,22 +449,18 @@ class CustomQTreeWidgetItem(QTreeWidgetItem):
         tabs -= 1
 
         ret += self.tabstr(tabs) + "}\n" 
-        ret += self.tabstr(tabs) + "return o" + self.Name + ";\n"
-        tabs -= 1
+        ret += self.tabstr(tabs) + "return o" + self.Name + ";\n"        
 
-        ret += self.tabstr(tabs) + "}),"        
-
-        if self.parent() == None:
-            ret += ";\n"                                       
+        if self.parent() == None:                                                   
             tabs -= 1
             ret += self.tabstr(tabs) + "}\n"
+            ret += self.tabstr(tabs) + "// #endregion\n"
             tabs -= 1
             ret += self.tabstr(tabs) + "}\n"                        
-            tabs -= 1
-            ret += self.tabstr(tabs) + "}\n" 
+            
 
-        else:
-            ret += "\n"
+        else:            
+            ret += self.tabstr(tabs) + "}),\n"             
 
         return ret
     
