@@ -78,10 +78,19 @@ class Ui_MainWindow(object):
         self.menubar = QtWidgets.QMenuBar(parent=MainWindow)
         self.menubar.setGeometry(QtCore.QRect(0, 0, 947, 21))
         self.menubar.setObjectName("menubar")
+        self.menu_File = QtWidgets.QMenu(parent=self.menubar)
+        self.menu_File.setObjectName("menu_File")
         MainWindow.setMenuBar(self.menubar)
         self.statusbar = QtWidgets.QStatusBar(parent=MainWindow)
         self.statusbar.setObjectName("statusbar")
         MainWindow.setStatusBar(self.statusbar)
+        self.action_Save = QtGui.QAction(parent=MainWindow)
+        self.action_Save.setObjectName("action_Save")
+        self.action_Open = QtGui.QAction(parent=MainWindow)
+        self.action_Open.setObjectName("action_Open")
+        self.menu_File.addAction(self.action_Save)
+        self.menu_File.addAction(self.action_Open)
+        self.menubar.addAction(self.menu_File.menuAction())
 
         self.retranslateUi(MainWindow)
         self.tabWidget.setCurrentIndex(0)
@@ -93,6 +102,9 @@ class Ui_MainWindow(object):
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab), _translate("MainWindow", "Query"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_2), _translate("MainWindow", "Results"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_3), _translate("MainWindow", "Code"))
+        self.menu_File.setTitle(_translate("MainWindow", "&File"))
+        self.action_Save.setText(_translate("MainWindow", "&Save"))
+        self.action_Open.setText(_translate("MainWindow", "&Open"))
 from widgets import ColumnWidget, ConditionWidget, CustomTextedit, CustomTreeWidget, JsonViewer
 
 

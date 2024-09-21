@@ -129,6 +129,7 @@ def on_Refresh(url):
 def closeEvent(event):
     #tree_widget.save_state()
     super().closeEvent(event)
+  
 
 #endregion
 
@@ -174,11 +175,17 @@ if __name__ == "__main__":
 
     codeText = ui.codeText
 
+    
+    ui.menu_File.addAction(ui.action_Save)
+    ui.menu_File.addAction(ui.action_Open)
+    ui.action_Open.triggered.connect(lambda: tree_widget.load_state())
+    ui.action_Save.triggered.connect(lambda: tree_widget.save_state())
+
     a = widgets.AsyncoDataRequest(
         baseurl    = "prioritydev.clarksonevans.co.uk"
         , env      = "fuld1"
-        , user     = ""
-        , password = ""  
+        , user     = "si"
+        , password = "=Sund1al"  
     )    
     
     while not ( a.Cancel | a.LoginOK ) :

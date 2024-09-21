@@ -58,7 +58,7 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
             # Create a new item
             item = CustomQTreeWidgetItem(name=i['ENAME'] , title=i['TITLE'])
             item.FCLMN = i["FCLMN_SUBFORM"]                       
-                    
+            
             # Add the item to the tree widget
             self.addTopLevelItem(item)
 
@@ -69,12 +69,13 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
     def __getstate__(self):
         # Serialize the tree widget items
         state = []
-        for i in range(self.topLevelItemCount()):
+        for i in [i for i in range(self.topLevelItemCount()) if self.topLevelItem(i).checkState(0) == Qt.CheckState.Checked]:
             item = self.topLevelItem(i)
             state.append(self._serialize_item(item))
         return state
 
     def __setstate__(self, state):
+        super().__init__()
         # Clear the current items
         self.clear()
         # Deserialize the state and add items back to the tree widget
@@ -85,19 +86,25 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
     def _serialize_item(self, item):
         # Recursively serialize a QTreeWidgetItem
         item_data = {
-            "text": item.text(0),
-            "data": item.data(0, self.FCLMN),
-            "children": [self._serialize_item(item.child(i)) for i in range(item.childCount())]
+            "Title": item.Title,
+            "Check": item.Check,
+            "FCLMN": item.FCLMN,
+            "Name": item.Name,
+            "children": [self._serialize_item(item.child(i)) for i in [i for i in range(item.childCount()) if item.child(i).Check]]
         }
         return item_data
 
     def _deserialize_item(self, item_data):
         # Recursively deserialize a QTreeWidgetItem
-        item = CustomQTreeWidgetItem([item_data["text"]])
-        item.setData(0, self.FCLMN, item_data["data"])
+        # Create a new item
+        item = CustomQTreeWidgetItem(name=item_data["Name"] , title=item_data["Title"])
+        item.FCLMN = item_data["FCLMN"]
+        item.Check = item_data["Check"]
+
         for child_data in item_data["children"]:
             child_item = self._deserialize_item(child_data)
             item.addChild(child_item)
+
         return item
     
     def on_item_check_state_changed(self, item, column):
@@ -143,14 +150,19 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
 
     def load_state(self):
         try:
-            loaded_treewidget = self.load_treewidget_state('treewidget_state.pkl')
-            self.clear()
-            self.addTopLevelItems(loaded_treewidget.takeTopLevelItems())
+            loaded_treewidget = self.load_treewidget_state('treewidget_state.pkl')            
+            i = loaded_treewidget.takeTopLevelItem(0)
+            while i:
+                for t in range(self.topLevelItemCount()):
+                    if self.topLevelItem(t).Name == i.Name:                        
+                        self.topLevelItem(t).load(self.topLevelItem(t), i)
+                        break                
+                i = loaded_treewidget.takeTopLevelItem(0)
 
         except (FileNotFoundError, pickle.UnpicklingError):
             pass
 
-class CustomQTreeWidgetItem(QTreeWidgetItem):
+class CustomQTreeWidgetItem(QTreeWidgetItem):        
 
     def __init__(self, name=None, title=None, parent=None):
         super().__init__(parent)
@@ -164,6 +176,26 @@ class CustomQTreeWidgetItem(QTreeWidgetItem):
         self.setText(0, title)  # Set text for the first column        
         self.setFlags(self.flags() | Qt.ItemFlag.ItemIsUserCheckable)
         self.setCheckState(0, Qt.CheckState.Unchecked)
+
+    def load(self, olditem , item ):      
+        olditem.setExpanded(True)
+        self.FCLMN = item.FCLMN
+        self.Check = item.Check        
+        for i in range(olditem.childCount()):
+            for j in range(item.childCount()):
+                if self.child(i).Name == item.child(j).Name:
+                    self.child(i).load(olditem.child(i), item.child(j))
+
+
+        
+    def expandItem(self, data):
+        self.FCLMN = data['value'][0]["FCLMN_SUBFORM"]            
+
+        for i in data['value']:
+            if 'FLINK_SUBFORM' in i:
+                for s in i['FLINK_SUBFORM']:
+                    child_item = CustomQTreeWidgetItem(name=s['FNAME'] , title=s['TITLE'])                                                
+                    self.addChild(child_item)        
 
     # Returns the root item of the selected item
     def Root(self) :
@@ -229,16 +261,6 @@ class CustomQTreeWidgetItem(QTreeWidgetItem):
                 self.setCheckState(0, Qt.CheckState.Checked)
             case False:
                 self.setCheckState(0, Qt.CheckState.Unchecked)
-
-    def expandItem(self, data):
-        self.FCLMN = data['value'][0]["FCLMN_SUBFORM"]            
-
-        for i in data['value']:
-            if 'FLINK_SUBFORM' in i:
-                for s in i['FLINK_SUBFORM']:
-                    child_item = CustomQTreeWidgetItem(name=s['FNAME'] , title=s['TITLE'])                                                
-                    self.addChild(child_item)        
-
 #endregion
 
 #region "oData URL Generation"
