@@ -1,6 +1,7 @@
 import json , pickle
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTextEdit
 from PyQt6 import QtWidgets, QtCore
+from PyQt6.QtWidgets import QFileDialog
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint
 from PyQt6.QtWidgets import QTreeWidgetItem , QTableWidget
 from PyQt6.QtGui import QTextOption , QFocusEvent
@@ -66,6 +67,14 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
                 child_item = CustomQTreeWidgetItem(name=c['FNAME'] , title=c['TITLE'])            
                 item.addChild(child_item)
                 
+    #region "Save State"
+    def save_state(self):        
+        options = QFileDialog.Option.DontUseNativeDialog
+        file_name, _ = QFileDialog.getSaveFileName(self, "Save File", "", "Pickle Files (*.pkl)", options=options)
+        if file_name:
+            with open(file_name, 'wb') as file:
+                pickle.dump(self, file)            
+    
     def __getstate__(self):
         # Serialize the tree widget items
         state = []
@@ -73,16 +82,7 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
             item = self.topLevelItem(i)
             state.append(self._serialize_item(item))
         return state
-
-    def __setstate__(self, state):
-        super().__init__()
-        # Clear the current items
-        self.clear()
-        # Deserialize the state and add items back to the tree widget
-        for item_data in state:
-            item = self._deserialize_item(item_data)
-            self.addTopLevelItem(item)
-
+              
     def _serialize_item(self, item):
         # Recursively serialize a QTreeWidgetItem
         item_data = {
@@ -94,6 +94,36 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
         }
         return item_data
 
+    #endregion
+
+    #region "Load State"                                            
+    def load_state(self):
+        try:            
+            options = QFileDialog.Option.DontUseNativeDialog
+            file_name, _ = QFileDialog.getOpenFileName(self, "Open File", "", "Pickle Files (*.pkl)", options=options)
+            if file_name:            
+                with open(file_name, 'rb') as file:
+                    loaded_treewidget = pickle.load(file)                 
+                i = loaded_treewidget.takeTopLevelItem(0)
+                while i:
+                    for t in range(self.topLevelItemCount()):
+                        if self.topLevelItem(t).Name == i.Name:                        
+                            self.topLevelItem(t).load(self.topLevelItem(t), i)
+                            break                
+                    i = loaded_treewidget.takeTopLevelItem(0)
+
+        except (FileNotFoundError, pickle.UnpicklingError):
+            pass
+    
+    def __setstate__(self, state):
+        super().__init__()
+        # Clear the current items
+        self.clear()
+        # Deserialize the state and add items back to the tree widget
+        for item_data in state:
+            item = self._deserialize_item(item_data)
+            self.addTopLevelItem(item)
+    
     def _deserialize_item(self, item_data):
         # Recursively deserialize a QTreeWidgetItem
         # Create a new item
@@ -106,7 +136,9 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
             item.addChild(child_item)
 
         return item
-    
+
+    #endregion
+
     def on_item_check_state_changed(self, item, column):
         if column == 0:  # Assuming the checkbox is in the first column
             match item.checkState(0):
@@ -137,31 +169,6 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
                 recursive_uncheck(child)
         recursive_uncheck(item)
 
-    def save_treewidget_state(self , treewidget, filename):
-        with open(filename, 'wb') as file:
-            pickle.dump(treewidget, file)
-
-    def load_treewidget_state(self , filename):    
-        with open(filename, 'rb') as file:
-            return pickle.load(file)
-
-    def save_state(self):
-        self.save_treewidget_state(self, 'treewidget_state.pkl')
-
-    def load_state(self):
-        try:
-            loaded_treewidget = self.load_treewidget_state('treewidget_state.pkl')            
-            i = loaded_treewidget.takeTopLevelItem(0)
-            while i:
-                for t in range(self.topLevelItemCount()):
-                    if self.topLevelItem(t).Name == i.Name:                        
-                        self.topLevelItem(t).load(self.topLevelItem(t), i)
-                        break                
-                i = loaded_treewidget.takeTopLevelItem(0)
-
-        except (FileNotFoundError, pickle.UnpicklingError):
-            pass
-
 class CustomQTreeWidgetItem(QTreeWidgetItem):        
 
     def __init__(self, name=None, title=None, parent=None):
@@ -186,8 +193,6 @@ class CustomQTreeWidgetItem(QTreeWidgetItem):
                 if self.child(i).Name == item.child(j).Name:
                     self.child(i).load(olditem.child(i), item.child(j))
 
-
-        
     def expandItem(self, data):
         self.FCLMN = data['value'][0]["FCLMN_SUBFORM"]            
 
